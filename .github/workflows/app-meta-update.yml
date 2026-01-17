@@ -1,4 +1,4 @@
-name: Android CI
+name: Android CI (Final Stabilized)
 
 on:
   push:
@@ -7,56 +7,54 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # 锁定 Ubuntu 版本，避免系统预装工具频繁变动带来的干扰
+    runs-on: ubuntu-22.04 
 
     steps:
       - name: Checkout Source
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0 # 获取完整提交历史，确保子模块引用不出错
+          fetch-depth: 0
 
-      - name: Set up JDK 11
+      - name: Set up JDK 11 (Strict)
         uses: actions/setup-java@v4
         with:
           java-version: '11'
           distribution: 'temurin'
+          cache: 'gradle' # 开启缓存，这是文心一言强调的性能关键
 
-      - name: Force Flatten Project Structure
-        # 【最稳妥的补救步骤】
-        # 1. 如果子模块代码在，直接把源码合并到 app 模块
-        # 2. 从 settings.gradle 中移除这些难缠的子模块声明
-        # 3. 移除 build.gradle 中对这些 project 的依赖引用
+      - name: Setup Android SDK & NDK
+        # 吸收 DeepSeek 建议：明确 NDK 版本，解决 C++ 编译的底层隐患
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: '25.2.9519653' # 与 AGP 7.2.2 兼容性最好的版本
+
+      - name: Force Fix Variant Matching
+        # 这是针对 "No matching configuration of project :stub" 的精准打击
+        # 强制让所有子模块在没有找到对应变体时，回退到默认配置
         run: |
-          echo "Flattening project modules to prevent resolve errors..."
-          # 合并 stub 源码
-          if [ -d "stub/src/main/java" ]; then
-            cp -r stub/src/main/java/* app/src/main/java/ || true
-          fi
-          # 合并 dexkit 源码 (如果存在)
-          if [ -d "dexkit/DexKit/src/main/java" ]; then
-            cp -r dexkit/DexKit/src/main/java/* app/src/main/java/ || true
-          fi
-          
-          # 清理配置文件，让 Gradle 认为这只是个单模块项目
-          sed -i '/include(":stub")/d' settings.gradle.kts
-          sed -i '/include(":mmkv")/d' settings.gradle.kts
-          sed -i '/include(":dexkit")/d' settings.gradle.kts
-          sed -i 's/project(":stub")/"de.robv.android.xposed:api:82"/g' app/build.gradle.kts
-          sed -i '/project(":mmkv")/d' app/build.gradle.kts
-          sed -i '/project(":dexkit")/d' app/build.gradle.kts
-          
-      - name: Setup Gradle
+          echo "android.matchingFallbacks.allowDefault=true" >> gradle.properties
+          # 统一所有模块的 SDK 版本，消除 Attribute 不匹配
+          sed -i 's/compileSdk = .*/compileSdk = 33/g' **/*.gradle.kts || true
+
+      - name: Setup Gradle (Legacy Mode)
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '7.2'
+          # 禁用守护进程，防止内存污染
+          gradle-home-cache-cleanup: true
 
-      - name: Build APK
-        # 使用 --no-daemon 减少内存压力，-x 跳过所有非必要检查
-        run: ./gradlew :app:assembleDebug -x lint -x test --stacktrace
+      - name: Build APK (Phase-by-Phase)
+        # 吸收两位 AI 的建议：先单独构建子模块，再构建主程序
+        # 这样可以强迫 Gradle 先生成子模块的“生产者属性”
+        run: |
+          chmod +x gradlew
+          ./gradlew :stub:assembleDebug --no-daemon
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace --info
 
-      - name: Upload APK
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: XAutoDaily-Fixed-Build
+          name: XAutoDaily-Final-Build
           path: app/build/outputs/apk/debug/*.apk
