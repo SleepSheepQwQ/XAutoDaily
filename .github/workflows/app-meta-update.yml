@@ -1,4 +1,4 @@
-name: Android CI (Final Stabilized)
+name: Android CI (Self-Diagnostic Edition)
 
 on:
   push:
@@ -7,8 +7,7 @@ on:
 
 jobs:
   build:
-    # 锁定 Ubuntu 版本，避免系统预装工具频繁变动带来的干扰
-    runs-on: ubuntu-22.04 
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Source
@@ -17,44 +16,62 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Set up JDK 11 (Strict)
+      - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
           java-version: '11'
           distribution: 'temurin'
-          cache: 'gradle' # 开启缓存，这是文心一言强调的性能关键
+          cache: 'gradle'
 
-      - name: Setup Android SDK & NDK
-        # 吸收 DeepSeek 建议：明确 NDK 版本，解决 C++ 编译的底层隐患
-        uses: android-actions/setup-android@v3
-        with:
-          ndk-version: '25.2.9519653' # 与 AGP 7.2.2 兼容性最好的版本
-
-      - name: Force Fix Variant Matching
-        # 这是针对 "No matching configuration of project :stub" 的精准打击
-        # 强制让所有子模块在没有找到对应变体时，回退到默认配置
+      - name: 🛠️ Diagnostic: System Environment Check
+        # 第一步自检：看看 GitHub 到底给了我们什么环境
         run: |
+          echo "=== 核心环境自检 ==="
+          java -version
+          echo "Android Home: $ANDROID_SDK_ROOT"
+          echo "NDK Bundle: /usr/local/lib/android/sdk/ndk-bundle"
+          ls /usr/local/lib/android/sdk/ndk || echo "NDK dir not found"
+          
+      - name: Initialize Project Properties
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          # 动态寻找 NDK 路径，防止硬编码失效
+          NDK_PATH=$(ls -d /usr/local/lib/android/sdk/ndk/* | head -n 1 || echo "/usr/local/lib/android/sdk/ndk-bundle")
+          echo "ndk.dir=$NDK_PATH" >> local.properties
           echo "android.matchingFallbacks.allowDefault=true" >> gradle.properties
-          # 统一所有模块的 SDK 版本，消除 Attribute 不匹配
-          sed -i 's/compileSdk = .*/compileSdk = 33/g' **/*.gradle.kts || true
+          echo "Using NDK path: $NDK_PATH"
 
-      - name: Setup Gradle (Legacy Mode)
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '7.2'
-          # 禁用守护进程，防止内存污染
-          gradle-home-cache-cleanup: true
 
-      - name: Build APK (Phase-by-Phase)
-        # 吸收两位 AI 的建议：先单独构建子模块，再构建主程序
-        # 这样可以强迫 Gradle 先生成子模块的“生产者属性”
+      - name: 🚀 Build APK with Self-Diagnostic
         run: |
           chmod +x gradlew
-          ./gradlew :stub:assembleDebug --no-daemon
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace --info
+          # 使用 --continue 即使子模块失败也尝试暴露更多错误信息
+          # 使用 -P 强制覆盖可能冲突的配置
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace --continue \
+            -Dorg.gradle.debug=false \
+            -Dorg.gradle.daemon=false \
+            -Pandroid.uniquePackageNames=false
+
+      - name: 🔍 Post-Failure Diagnostic
+        # 只有在上面步骤失败时才会运行
+        if: failure()
+        run: |
+          echo "=== 编译失败诊断报告 ==="
+          echo "1. 检查子模块目录是否存在内容:"
+          ls -R stub | head -n 20
+          echo "2. 输出详细依赖关系图 (查找冲突):"
+          ./gradlew :app:dependencies --configuration debugCompileClasspath || echo "Failed to get dependencies"
+          echo "3. 搜索最近的 Error 日志记录:"
+          # 寻找具体的 Kotlin/Java 报错行
+          find . -name "build" -type d -prune -o -name "*.kt" -print | xargs grep -l "class" | head -n 5
 
       - name: Upload Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: XAutoDaily-Final-Build
+          name: XAutoDaily-Build
           path: app/build/outputs/apk/debug/*.apk

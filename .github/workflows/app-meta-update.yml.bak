@@ -1,0 +1,60 @@
+name: Android CI (Final Stabilized)
+
+on:
+  push:
+    branches: [ "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    # 锁定 Ubuntu 版本，避免系统预装工具频繁变动带来的干扰
+    runs-on: ubuntu-22.04 
+
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 11 (Strict)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: 'gradle' # 开启缓存，这是文心一言强调的性能关键
+
+      - name: Setup Android SDK & NDK
+        # 吸收 DeepSeek 建议：明确 NDK 版本，解决 C++ 编译的底层隐患
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: '25.2.9519653' # 与 AGP 7.2.2 兼容性最好的版本
+
+      - name: Force Fix Variant Matching
+        # 这是针对 "No matching configuration of project :stub" 的精准打击
+        # 强制让所有子模块在没有找到对应变体时，回退到默认配置
+        run: |
+          echo "android.matchingFallbacks.allowDefault=true" >> gradle.properties
+          # 统一所有模块的 SDK 版本，消除 Attribute 不匹配
+          sed -i 's/compileSdk = .*/compileSdk = 33/g' **/*.gradle.kts || true
+
+      - name: Setup Gradle (Legacy Mode)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '7.2'
+          # 禁用守护进程，防止内存污染
+          gradle-home-cache-cleanup: true
+
+      - name: Build APK (Phase-by-Phase)
+        # 吸收两位 AI 的建议：先单独构建子模块，再构建主程序
+        # 这样可以强迫 Gradle 先生成子模块的“生产者属性”
+        run: |
+          chmod +x gradlew
+          ./gradlew :stub:assembleDebug --no-daemon
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace --info
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAutoDaily-Final-Build
+          path: app/build/outputs/apk/debug/*.apk
