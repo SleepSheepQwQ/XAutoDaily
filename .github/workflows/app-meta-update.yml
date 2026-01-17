@@ -1,4 +1,4 @@
-name: Android CI (Self-Diagnostic Edition)
+name: Android CI
 
 on:
   push:
@@ -23,19 +23,15 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: 🛠️ Diagnostic: System Environment Check
-        # 第一步自检：看看 GitHub 到底给了我们什么环境
+      - name: Environment Diagnostic
         run: |
-          echo "=== 核心环境自检 ==="
           java -version
           echo "Android Home: $ANDROID_SDK_ROOT"
-          echo "NDK Bundle: /usr/local/lib/android/sdk/ndk-bundle"
-          ls /usr/local/lib/android/sdk/ndk || echo "NDK dir not found"
+          ls /usr/local/lib/android/sdk/ndk || echo "NDK not found"
           
       - name: Initialize Project Properties
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          # 动态寻找 NDK 路径，防止硬编码失效
           NDK_PATH=$(ls -d /usr/local/lib/android/sdk/ndk/* | head -n 1 || echo "/usr/local/lib/android/sdk/ndk-bundle")
           echo "ndk.dir=$NDK_PATH" >> local.properties
           echo "android.matchingFallbacks.allowDefault=true" >> gradle.properties
@@ -46,28 +42,19 @@ jobs:
         with:
           gradle-version: '7.2'
 
-      - name: 🚀 Build APK with Self-Diagnostic
+      - name: Build APK
         run: |
           chmod +x gradlew
-          # 使用 --continue 即使子模块失败也尝试暴露更多错误信息
-          # 使用 -P 强制覆盖可能冲突的配置
           ./gradlew :app:assembleDebug --no-daemon --stacktrace --continue \
             -Dorg.gradle.debug=false \
             -Dorg.gradle.daemon=false \
             -Pandroid.uniquePackageNames=false
 
-      - name: 🔍 Post-Failure Diagnostic
-        # 只有在上面步骤失败时才会运行
+      - name: Failure Diagnostic
         if: failure()
         run: |
-          echo "=== 编译失败诊断报告 ==="
-          echo "1. 检查子模块目录是否存在内容:"
-          ls -R stub | head -n 20
-          echo "2. 输出详细依赖关系图 (查找冲突):"
-          ./gradlew :app:dependencies --configuration debugCompileClasspath || echo "Failed to get dependencies"
-          echo "3. 搜索最近的 Error 日志记录:"
-          # 寻找具体的 Kotlin/Java 报错行
-          find . -name "build" -type d -prune -o -name "*.kt" -print | xargs grep -l "class" | head -n 5
+          ls -R stub | head -n 20 || echo "Stub empty"
+          ./gradlew :app:dependencies --configuration debugCompileClasspath || echo "Dep failed"
 
       - name: Upload Artifact
         if: success()
