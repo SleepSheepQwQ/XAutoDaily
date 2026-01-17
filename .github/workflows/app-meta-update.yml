@@ -1,46 +1,35 @@
-name: update app-meta.json
+name: Android CI
 
 on:
   push:
-    branches:
-      - master
-    paths:
-      - 'app-meta.json'
-      - '.github/workflows/app-meta-update.yml'
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Set variables
-        run: |
-          echo "app_meta=https://raw.githubusercontent.com/LuckyPray/XAutoDaily/master/app-meta.json" >> $GITHUB_ENV
+    - uses: actions/checkout@v4
 
-      - name: Clone pages branch
-        uses: actions/checkout@v3.3.0
-        with:
-          ref: pages
+    - name: set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: gradle
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
 
-      - name: Update app-meta.json
-        run: |
-          curl -sSL ${app_meta} > app-meta.json
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          python generate.py
-          git add .
-          if [[ -n $(git status -s) ]]; then
-            git commit -m "Update app-meta.json"
-            git push "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" pages:pages
-          fi
+    - name: Build with Gradle
+      # 使用社区标准命令，确保执行完整的检查和构建
+      run: ./gradlew build
 
-      - name: Purge jsdelivr CDN
-        run: |
-          for file in $(ls); do
-            curl -i "https://purge.jsdelivr.net/gh/${{ github.repository }}@pages/${file}"
-          done
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug
+        path: app/build/outputs/apk/debug/*.apk
