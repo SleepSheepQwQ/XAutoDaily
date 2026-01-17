@@ -12,28 +12,28 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up JDK 17 (For Gradle Setup)
+    - name: Set up JDK 17 (For Setup)
       uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Fix Gradle Wrapper
-      # 先用 Java 17 把 wrapper 补好
-      run: gradle wrapper
+    - name: Fix Gradle Wrapper (Strict Version)
+      # 【关键微调】强制使用 7.2 版本，这才是你代码的“原配”
+      run: gradle wrapper --gradle-version 7.2
 
-    - name: Set up JDK 11 (For Project Build)
+    - name: Set up JDK 11 (For Build)
       uses: actions/setup-java@v4
       with:
         java-version: '11'
         distribution: 'temurin'
         cache: gradle
 
-    - name: Grant execute permission for gradlew
+    - name: Grant Permission
       run: chmod +x gradlew
 
     - name: Build with Gradle
-      # 现在环境是 Java 11，且有了 wrapper，可以正常编译了
+      # 现在有了匹配的 7.2 环境，编译终于可以开始了
       run: ./gradlew assembleDebug
 
     - name: Upload Artifact
