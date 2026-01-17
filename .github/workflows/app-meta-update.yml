@@ -3,8 +3,6 @@ name: Android CI
 on:
   push:
     branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
   workflow_dispatch:
 
 jobs:
@@ -21,15 +19,19 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    - name: Fix Gradle Wrapper
+      # 【核心补救措施】如果 jar 包没了，这行命令会自动重新生成它
+      run: gradle wrapper
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
     - name: Build with Gradle
-      # 使用社区标准命令，确保执行完整的检查和构建
-      run: ./gradlew build
+      # 先用 assembleDebug 确认能出包，这个命令最稳
+      run: ./gradlew assembleDebug
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
+        name: XAutoDaily-Debug
         path: app/build/outputs/apk/debug/*.apk

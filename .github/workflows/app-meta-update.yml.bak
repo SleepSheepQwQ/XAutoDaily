@@ -2,33 +2,34 @@ name: Android CI
 
 on:
   push:
-    branches: [ "master" ] # 只有推送到 master 时才跑，省得乱跑
-  workflow_dispatch:      # 允许你在 GitHub 网页上点按钮手动触发
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Source
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Set up JDK 17
+    - name: set up JDK 11
       uses: actions/setup-java@v4
       with:
-        java-version: '17' # 你的项目用了较新的 Kotlin/Compose，必须用 17
+        java-version: '11'
         distribution: 'temurin'
         cache: gradle
 
-    - name: Grant Permission
+    - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
     - name: Build with Gradle
-      # 直接调用 Gradle 打包，自动识别所有依赖
-      run: ./gradlew assembleDebug
+      # 使用社区标准命令，确保执行完整的检查和构建
+      run: ./gradlew build
 
-    - name: Upload APK
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: XAutoDaily-Debug
+        name: app-debug
         path: app/build/outputs/apk/debug/*.apk
