@@ -12,22 +12,28 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: set up JDK 11
+    - name: Set up JDK 17 (For Gradle Setup)
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Fix Gradle Wrapper
+      # 先用 Java 17 把 wrapper 补好
+      run: gradle wrapper
+
+    - name: Set up JDK 11 (For Project Build)
       uses: actions/setup-java@v4
       with:
         java-version: '11'
         distribution: 'temurin'
         cache: gradle
 
-    - name: Fix Gradle Wrapper
-      # 【核心补救措施】如果 jar 包没了，这行命令会自动重新生成它
-      run: gradle wrapper
-
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
     - name: Build with Gradle
-      # 先用 assembleDebug 确认能出包，这个命令最稳
+      # 现在环境是 Java 11，且有了 wrapper，可以正常编译了
       run: ./gradlew assembleDebug
 
     - name: Upload Artifact
