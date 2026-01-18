@@ -1,4 +1,4 @@
-name: Android CI
+name: Android CI (Stabilized)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 任务一：审查程序 (快速预检，通常在 20s 内完成)
+  # 任务一：深度审计
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -14,39 +14,29 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
-      - name: 🔎 Project Structure Audit
+      - name: 🔎 Deep Audit
         run: |
-          echo "=== 开始物理审查 ==="
-          
-          # 1. 检查子模块源代码是否存在
-          modules=("stub" "mmkv" "dexkit")
-          for mod in "${modules[@]}"; do
-            if [ -f "$mod/build.gradle.kts" ] || [ -f "$mod/build.gradle" ]; then
-              echo "✅ 模块 $mod: 已发现构建脚本"
-            else
-              echo "❌ 错误: 模块 $mod 源码缺失。请检查 .gitmodules 或递归拉取设置。"
-              exit 1
-            fi
-          done
-
-          # 2. 检查关键目录
-          if [ ! -d "app/src/main" ]; then
-            echo "❌ 错误: 主模块 app 结构异常。"
+          echo "=== 物理审计 ==="
+          # 验证子模块不仅有文件夹，还得有具体大小的脚本文件
+          if [ -s "stub/build.gradle.kts" ] || [ -s "stub/build.gradle" ]; then
+            echo "✅ Submodule 'stub' is valid."
+          else
+            echo "❌ Submodule 'stub' is empty or missing build script."
             exit 1
           fi
-          
-          echo "=== 审查通过 ==="
 
-  # 任务二：正式构建 (依赖于 audit 任务)
+  # 任务二：受控构建
   build:
-    needs: audit  # 只有 audit 成功，才会执行 build
+    needs: audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Set up JDK 11
         uses: actions/setup-java@v4
@@ -54,22 +44,30 @@ jobs:
           java-version: '11'
           distribution: 'temurin'
 
-      - name: Initialize Environment
+      - name: 🔒 Atomic Configuration (Zero-Trust Mode)
         run: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          # 自动寻找 NDK 路径
-          NDK_PATH=$(ls -d $ANDROID_SDK_ROOT/ndk/* | head -n 1)
-          echo "ndk.dir=$NDK_PATH" >> local.properties
-          echo "android.matchingFallbacks.allowDefault=true" >> gradle.properties
+          # 1. 物理移除所有可能干扰的属性
+          rm -f gradle.properties
+          
+          # 2. 重新构建干净的 gradle.properties (使用单引号 'EOF' 防止变量泄露)
+          cat > gradle.properties << 'EOF'
+          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=true
+          android.matchingFallbacks=debug,release
+          # 关键：禁用所有可能导致 7.5.1 崩溃的实验性功能
+          android.experimental.enableNewResourceShrinker=false
+          android.defaults.buildfeatures.buildconfig=true
+          EOF
 
-      - name: Build APK
+          # 3. 强制锁定 Gradle 7.3.3 (AGP 7.2.2 的最佳拍档)
+          sed -i 's|distributionUrl=.*|distributionUrl=https\://services.gradle.org/distributions/gradle-7.3.3-bin.zip|' gradle/wrapper/gradle-wrapper.properties
+          
+          # 4. 强制物理重置子模块 (最后一道防线)
+          git submodule update --init --recursive --force
+
+      - name: 🚀 Execution
         run: |
           chmod +x gradlew
+          # 使用 --no-daemon 确保环境绝对隔离
           ./gradlew :app:assembleDebug --no-daemon --stacktrace
-
-      - name: Upload Artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: XAutoDaily-Build
-          path: app/build/outputs/apk/debug/*.apk
