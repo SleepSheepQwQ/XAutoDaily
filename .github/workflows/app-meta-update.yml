@@ -1,4 +1,4 @@
-name: Android CI
+name: Android CI (Modern Runner)
 
 on:
   push:
@@ -16,49 +16,34 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: Set up JDK 11
+      - name: Set up JDK 11 & 17
         uses: actions/setup-java@v4
         with:
-          java-version: '11'
+          java-version: |
+            11
+            17
           distribution: 'temurin'
-          cache: 'gradle'
 
-      - name: Environment Diagnostic
+      - name: 🛠️ Setup Legacy Android Environment
         run: |
-          java -version
-          echo "Android Home: $ANDROID_SDK_ROOT"
-          ls /usr/local/lib/android/sdk/ndk || echo "NDK not found"
+          # 1. 临时使用 JDK 17 来运行 SDK 管理工具
+          export JAVA_HOME=$JAVA_HOME_17_X64
           
-      - name: Initialize Project Properties
-        run: |
+          # 2. 安装 AGP 7.2.2 喜欢的旧版 NDK (23.x)
+          # 使用 --sdk_root 确保路径确定性
+          echo "y" | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --install "ndk;23.1.7779620" --sdk_root=$ANDROID_SDK_ROOT
+          
+          # 3. 切换回 JDK 11 进行项目配置
+          export JAVA_HOME=$JAVA_HOME_11_X64
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          NDK_PATH=$(ls -d /usr/local/lib/android/sdk/ndk/* | head -n 1 || echo "/usr/local/lib/android/sdk/ndk-bundle")
-          echo "ndk.dir=$NDK_PATH" >> local.properties
+          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/23.1.7779620" >> local.properties
+          
+          # 4. 解决 :stub 的属性匹配问题
           echo "android.matchingFallbacks.allowDefault=true" >> gradle.properties
-          echo "Using NDK path: $NDK_PATH"
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '7.2'
-
-      - name: Build APK
+      - name: 🚀 Precision Build
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace --continue \
-            -Dorg.gradle.debug=false \
-            -Dorg.gradle.daemon=false \
-            -Pandroid.uniquePackageNames=false
-
-      - name: Failure Diagnostic
-        if: failure()
-        run: |
-          ls -R stub | head -n 20 || echo "Stub empty"
-          ./gradlew :app:dependencies --configuration debugCompileClasspath || echo "Dep failed"
-
-      - name: Upload Artifact
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: XAutoDaily-Build
-          path: app/build/outputs/apk/debug/*.apk
+          # 强制锁定运行时 Gradle 版本，不给服务器“加戏”的空间
+          ./gradlew wrapper --gradle-version 7.2
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
