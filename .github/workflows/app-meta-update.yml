@@ -1,4 +1,4 @@
-name: Android CI (Stabilized)
+name: Android CI (Stabilized & Cached)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 任务一：深度审计
+  # 阶段一：源码与子模块审计
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -16,18 +16,17 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
-      - name: 🔎 Deep Audit
+      - name: 🔎 Verify Environment
         run: |
-          echo "=== 物理审计 ==="
-          # 验证子模块不仅有文件夹，还得有具体大小的脚本文件
+          echo "=== 检查关键子模块 ==="
           if [ -s "stub/build.gradle.kts" ] || [ -s "stub/build.gradle" ]; then
-            echo "✅ Submodule 'stub' is valid."
+            echo "✅ 子模块源码已就绪"
           else
-            echo "❌ Submodule 'stub' is empty or missing build script."
+            echo "❌ 子模块缺失，请检查 .gitmodules"
             exit 1
           fi
 
-  # 任务二：受控构建
+  # 阶段二：受控构建与产物提取
   build:
     needs: audit
     runs-on: ubuntu-latest
@@ -43,31 +42,40 @@ jobs:
         with:
           java-version: '11'
           distribution: 'temurin'
+          # 💡 精华：开启 Gradle 缓存，让 GitHub 记住下载过的 NDK 和中间产物
+          cache: 'gradle'
 
-      - name: 🔒 Atomic Configuration (Zero-Trust Mode)
+      - name: 🔒 Atomic Configuration (Zero-Trust)
         run: |
-          # 1. 物理移除所有可能干扰的属性
+          # 1. 物理重置配置，彻底杜绝粘连和脏配置
           rm -f gradle.properties
-          
-          # 2. 重新构建干净的 gradle.properties (使用单引号 'EOF' 防止变量泄露)
           cat > gradle.properties << 'EOF'
           org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+          org.gradle.daemon=false
+          org.gradle.parallel=true
           android.useAndroidX=true
           android.enableJetifier=true
           android.matchingFallbacks=debug,release
-          # 关键：禁用所有可能导致 7.5.1 崩溃的实验性功能
           android.experimental.enableNewResourceShrinker=false
-          android.defaults.buildfeatures.buildconfig=true
           EOF
 
-          # 3. 强制锁定 Gradle 7.3.3 (AGP 7.2.2 的最佳拍档)
+          # 2. 物理锁定 Gradle 7.3.3 (AGP 7.2.2 的最佳拍档)
           sed -i 's|distributionUrl=.*|distributionUrl=https\://services.gradle.org/distributions/gradle-7.3.3-bin.zip|' gradle/wrapper/gradle-wrapper.properties
           
-          # 4. 强制物理重置子模块 (最后一道防线)
-          git submodule update --init --recursive --force
+          # 3. 注入本地 SDK 路径环境变量
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
-      - name: 🚀 Execution
+      - name: 🚀 Execution (Assemble APK)
         run: |
           chmod +x gradlew
-          # 使用 --no-daemon 确保环境绝对隔离
+          # 使用 --no-daemon 确保环境绝对纯净
           ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      # 🎁 产物提取：将生成的 APK 保存到 GitHub Actions 页面
+      - name: 📦 Upload APK Result
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAutoDaily-Debug-${{ github.run_id }}
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
