@@ -24,14 +24,22 @@ jobs:
           distribution: 'temurin'
           java-version: '11'
 
-      - name: Set up Android SDK & NDK
-        env:
-          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
         run: |
-          # Accept licenses
-          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          # Install NDK
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "ndk;25.0.8775105" > /dev/null 2>&1
+          sdkmanager "ndk;25.0.8775105" --sdk_root=$ANDROID_SDK_ROOT
+
+      - name: Build Debug APK
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: XAutoDaily-debug
+          path: app/build/outputs/apk/debug/*.apk
 
       - name: Build Debug APK
         run: |
