@@ -26,8 +26,12 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        env:
+          SKIP_JDK_VERSION_CHECK: true
 
       - name: Install NDK
+        env:
+          SKIP_JDK_VERSION_CHECK: true
         run: |
           sdkmanager "ndk;25.0.8775105" --sdk_root=$ANDROID_SDK_ROOT
 
