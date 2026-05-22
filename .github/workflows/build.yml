@@ -18,32 +18,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 11
+      - name: Set up JDK 17 (for SDK tools)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: |
+          sdkmanager "ndk;25.0.8775105" --sdk_root=$ANDROID_SDK_ROOT
+
+      - name: Switch to JDK 11 (for build)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '11'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        env:
-          SKIP_JDK_VERSION_CHECK: true
-
-      - name: Install NDK
-        env:
-          SKIP_JDK_VERSION_CHECK: true
-        run: |
-          sdkmanager "ndk;25.0.8775105" --sdk_root=$ANDROID_SDK_ROOT
-
-      - name: Build Debug APK
-        run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: XAutoDaily-debug
-          path: app/build/outputs/apk/debug/*.apk
 
       - name: Build Debug APK
         run: |
