@@ -254,59 +254,17 @@ fun EditEnvLayout(
                                 color = Color(0xFFFF4A4A),
                                 modifier = Modifier.padding(horizontal = 8.dp)
                             )
-                            var limitErr by remember {
-                                mutableStateOf(false)
-                            }
                             OutlinedTextField(
                                 value = envMap[env.name]!!.value,
                                 onValueChange = {
-                                    if (env.limit > 0) {
-                                        when (env.type) {
-                                            "string" -> {
-                                                limitErr = it.length > env.limit
-                                            }
-                                            "randString" -> {
-                                                var flag = false
-                                                it.split("|").forEach {
-                                                    if (it.length > env.limit) {
-                                                        flag = true
-                                                    }
-                                                }
-                                                limitErr = flag
-                                            }
-                                            "num" -> {
-                                                limitErr = if (it.isNotEmpty()) {
-                                                    if (it.isDigitsOnly()) {
-                                                        it.toInt() > env.limit
-                                                    } else true
-                                                } else {
-                                                    false
-                                                }
-                                            }
-                                            else -> {
-                                                limitErr = it.split(",").size > env.limit
-                                            }
-                                        }
-                                    }
-                                    if (!limitErr) {
-                                        envMap[env.name]?.value = it
-                                    }
+                                    envMap[env.name]?.value = it
                                 },
                                 label = { Text(text = env.name) },
                                 modifier = Modifier
                                     .padding(horizontal = 10.dp)
                                     .fillMaxWidth()
-                                    .padding(bottom = 10.dp),
-                                isError = limitErr
+                                    .padding(bottom = 10.dp)
                             )
-                            if (limitErr && env.limit > 0) {
-                                Text(
-                                    text = "变量长度/大小/单段文字限制为${env.limit}",
-                                    color = Color(0xFFFF4A4A),
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.padding(8.dp)
-                                )
-                            }
                         }
                     }
                 }
